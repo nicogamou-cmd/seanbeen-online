@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>SEANBEEN 2D - Battle Royale Online Real</title>
+  <title>SEANBEEN 2D - Battle Royale Online Sincronizado</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
@@ -148,6 +148,13 @@
             remotePlayer.x = data.x;
             remotePlayer.y = data.y;
             remotePlayer.facing = data.facing;
+          }
+        } else {
+          // Si somos cliente, recibimos la lista de bots exacta y la tormenta del Host
+          if (data.type === 'worldState') {
+            bots = data.bots;
+            storm = data.storm;
+            bus = data.bus;
           }
         }
       });
@@ -316,7 +323,6 @@
       document.getElementById('display-room-code').value = peer.id;
     });
 
-    // BOTÓN PARA COPIAR AL PORTAPAPELES
     document.getElementById('copy-code-btn').addEventListener('click', () => {
       let codeInput = document.getElementById('display-room-code');
       codeInput.select();
@@ -429,7 +435,7 @@
       if (player && gameState === 'PLAYING') {
         player.facing = worldMouseX >= player.x + player.width / 2 ? 1 : -1;
         if (conn && conn.open) {
-          conn.send({ x: player.x, y: player.y, facing: player.facing });
+          conn.send({ type: 'playerInput', x: player.x, y: player.y, facing: player.facing });
         }
       }
     });
@@ -557,10 +563,12 @@
     function update() {
       if (gameState !== 'PLAYING') return;
 
-      if (storm.timer > 0) {
-        storm.timer--;
-      } else {
-        if (storm.radius > 600) storm.radius -= 0.35;
+      if (isHost) {
+        if (storm.timer > 0) {
+          storm.timer--;
+        } else {
+          if (storm.radius > 600) storm.radius -= 0.35;
+        }
       }
 
       let distToStormCenter = Math.abs((player.x + player.width/2) - storm.x);
@@ -586,17 +594,17 @@
         stormOverlay.style.display = 'none';
       }
 
-      if (bus.active) {
+      if (bus.active && isHost) {
         bus.x += bus.speed;
         if (bus.x > MAP_WIDTH) bus.x = -200; 
-        if (player.inBus) {
-          player.x = bus.x + 30;
-          player.y = bus.y + 10;
-        }
+      }
+      if (player.inBus) {
+        player.x = bus.x + 30;
+        player.y = bus.y + 10;
       }
 
       airDrops.forEach(ad => {
-        if (ad.falling) {
+        if (ad.falling && isHost) {
           ad.y += 1.2;
           if (ad.y >= groundY - ad.height) {
             ad.y = groundY - ad.height;
@@ -646,7 +654,7 @@
         moveEntity(player, obstacles);
 
         if (conn && conn.open) {
-          conn.send({ x: player.x, y: player.y, facing: player.facing });
+          conn.send({ type: 'playerInput', x: player.x, y: player.y, facing: player.facing });
         }
 
         if (player.shootCooldown > 0) player.shootCooldown--;
@@ -704,76 +712,89 @@
         }
       }
 
-      let obstacles = getAllObstacles();
-      let allTargets = [];
-      if (player && player.hp > 0 && !player.inBus) allTargets.push(player);
-      if (remotePlayer && remotePlayer.hp > 0) allTargets.push(remotePlayer);
-      bots.forEach(b => { if (b.hp > 0) allTargets.push(b); });
+      // Si somos Host, procesamos los bots y enviamos el estado al cliente
+      if (isHost) {
+        let obstacles = getAllObstacles();
+        let allTargets = [];
+        if (player && player.hp > 0 && !player.inBus) allTargets.push(player);
+        if (remotePlayer && remotePlayer.hp > 0) allTargets.push(remotePlayer);
+        bots.forEach(b => { if (b.hp > 0) allTargets.push(b); });
 
-      bots.forEach(bot => {
-        if (bot.hp <= 0) return;
+        bots.forEach(bot => {
+          if (bot.hp <= 0) return;
 
-        if (bot.isReloading) {
-          bot.reloadTimer--;
-          if (bot.reloadTimer <= 0) { bot.isReloading = false; bot.ammo = bot.maxAmmo; }
-        }
+          if (bot.isReloading) {
+            bot.reloadTimer--;
+            if (bot.reloadTimer <= 0) { bot.isReloading = false; bot.ammo = bot.maxAmmo; }
+          }
 
-        let closestTarget = null;
-        let minDist = Infinity;
-        allTargets.forEach(t => {
-          if (t.id !== bot.id) {
-            let d = Math.hypot(t.x - bot.x, t.y - bot.y);
-            if (d < minDist) { minDist = d; closestTarget = t; }
+          let closestTarget = null;
+          let minDist = Infinity;
+          allTargets.forEach(t => {
+            if (t.id !== bot.id) {
+              let d = Math.hypot(t.x - bot.x, t.y - bot.y);
+              if (d < minDist) { minDist = d; closestTarget = t; }
+            }
+          });
+
+          if (closestTarget && minDist < 600) {
+            bot.vx = closestTarget.x > bot.x ? bot.speed : -bot.speed;
+          } else {
+            if (Math.random() < 0.02) bot.vx = (Math.random() - 0.5) * bot.speed * 2;
+          }
+
+          let nextX = bot.x + bot.vx;
+          let touchingLadder = ladders.some(l => checkCollision(bot, l));
+          
+          if (touchingLadder && closestTarget) {
+            if (closestTarget.y < bot.y - 30) {
+              bot.vy = -4.5; bot.grounded = true;
+            } else if (closestTarget.y > bot.y + 30) {
+              bot.vy = 4.5; bot.grounded = true;
+            }
+          }
+
+          let doorNearby = doors.find(d => !d.open && Math.abs((bot.x + bot.width/2) - (d.x + d.width/2)) < 60 && Math.abs(bot.y - d.y) < 80);
+          if (doorNearby) {
+              doorNearby.open = true;
+          } else {
+              let lowObstacle = obstacles.find(obs => checkCollision({ x: nextX, y: bot.y, width: bot.width, height: bot.height }, obs));
+              if (lowObstacle && bot.grounded) {
+                if (lowObstacle.height <= 100) {
+                  bot.vy = -11; bot.grounded = false; 
+                } else {
+                  bot.vx *= -1;
+                }
+              }
+          }
+
+          if (!bot.grounded && !touchingLadder) bot.vy += gravity;
+          moveEntity(bot, getAllObstacles()); 
+
+          if (bot.shootCooldown > 0) bot.shootCooldown--;
+
+          if (closestTarget && minDist < 450 && bot.shootCooldown <= 0) {
+            if (bot.ammo > 0 && !bot.isReloading) {
+              bot.ammo--;
+              let angle = Math.atan2((closestTarget.y + 20) - (bot.y + 20), (closestTarget.x + 13) - (bot.x + 13));
+              bullets.push({ owner: bot.id, type: bot.weapon, x: bot.x + 13, y: bot.y + 20, vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, damage: 10 });
+              bot.shootCooldown = bot.weapon === 'Rifle' ? 25 : 65;
+            } else if (bot.ammo <= 0 && !bot.isReloading) {
+              bot.isReloading = true; bot.reloadTimer = 110;
+            }
           }
         });
 
-        if (closestTarget && minDist < 600) {
-          bot.vx = closestTarget.x > bot.x ? bot.speed : -bot.speed;
-        } else {
-          if (Math.random() < 0.02) bot.vx = (Math.random() - 0.5) * bot.speed * 2;
+        // Enviar estado del mundo al cliente conectado
+        if (conn && conn.open) {
+          conn.send({
+            type: 'worldState',
+            bots: bots,
+            storm: storm,
+            bus: bus
+          });
         }
-
-        let nextX = bot.x + bot.vx;
-        let touchingLadder = ladders.some(l => checkCollision(bot, l));
-        
-        if (touchingLadder && closestTarget) {
-          if (closestTarget.y < bot.y - 30) {
-            bot.vy = -4.5; bot.grounded = true;
-          } else if (closestTarget.y > bot.y + 30) {
-            bot.vy = 4.5; bot.grounded = true;
-          }
-        }
-
-        let doorNearby = doors.find(d => !d.open && Math.abs((bot.x + bot.width/2) - (d.x + d.width/2)) < 60 && Math.abs(bot.y - d.y) < 80);
-        if (doorNearby) {
-            doorNearby.open = true;
-        } else {
-            let lowObstacle = obstacles.find(obs => checkCollision({ x: nextX, y: bot.y, width: bot.width, height: bot.height }, obs));
-            if (lowObstacle && bot.grounded) {
-              if (lowObstacle.height <= 100) {
-                bot.vy = -11; bot.grounded = false; 
-              } else {
-                bot.vx *= -1;
-              }
-            }
-        }
-
-        if (!bot.grounded && !touchingLadder) bot.vy += gravity;
-        moveEntity(bot, getAllObstacles()); 
-
-        if (bot.shootCooldown > 0) bot.shootCooldown--;
-
-        if (closestTarget && minDist < 450 && bot.shootCooldown <= 0) {
-          if (bot.ammo > 0 && !bot.isReloading) {
-            bot.ammo--;
-            let angle = Math.atan2((closestTarget.y + 20) - (bot.y + 20), (closestTarget.x + 13) - (bot.x + 13));
-            bullets.push({ owner: bot.id, type: bot.weapon, x: bot.x + 13, y: bot.y + 20, vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, damage: 10 });
-            bot.shootCooldown = bot.weapon === 'Rifle' ? 25 : 65;
-          } else if (bot.ammo <= 0 && !bot.isReloading) {
-            bot.isReloading = true; bot.reloadTimer = 110;
-          }
-        }
-      });
+      }
 
       for (let i = bullets.length - 1; i >= 0; i--) {
         let b = bullets[i];
@@ -802,6 +823,11 @@
           bullets.splice(i, 1); continue;
         }
 
+        let allTargets = [];
+        if (player && player.hp > 0 && !player.inBus) allTargets.push(player);
+        if (remotePlayer && remotePlayer.hp > 0) allTargets.push(remotePlayer);
+        bots.forEach(b => { if (b.hp > 0) allTargets.push(b); });
+
         allTargets.forEach(target => {
           if (hit) return; 
           if (b.owner !== target.id && checkCollision(bRect, target) && !(target.id === 'player' && player.inBus)) {
@@ -828,56 +854,6 @@
         });
 
         if (hit) { bullets.splice(i, 1); updateUI(); }
-      }
-
-      for (let i = rockets.length - 1; i >= 0; i--) {
-        let r = rockets[i];
-        r.x += r.vx; r.y += r.vy;
-        let rRect = { x: r.x - 5, y: r.y - 5, width: 10, height: 10 };
-        
-        let staticObstacles = [...fixedStructures, ...interiorFloors, ...props];
-        doors.forEach(d => { if (!d.open) staticObstacles.push(d); });
-        
-        let exploded = false;
-        if (staticObstacles.some(obs => checkCollision(rRect, obs)) || r.y >= groundY) exploded = true;
-
-        if (!exploded) {
-            for (let target of allTargets) {
-                if (r.owner !== target.id && checkCollision(rRect, target) && !(target.id === 'player' && player.inBus)) {
-                    exploded = true; break;
-                }
-            }
-        }
-
-        if (!exploded) {
-            if (blocks.some(blk => checkCollision(rRect, blk)) || ramps.some(rmp => checkCollision(rRect, rmp))) exploded = true;
-        }
-        
-        if (exploded) {
-          addParticles(r.x, r.y, '#f97316', 30);
-          addParticles(r.x, r.y, '#e74c3c', 25);
-
-          allTargets.forEach(target => {
-            let dist = Math.hypot(target.x - r.x, target.y - r.y);
-            if (dist < 120) {
-              target.hp -= 75;
-              addFloatingText(target.x, target.y - 20, '-75 EXPLOSIÓN', '#e74c3c');
-              if (target.hp <= 0 && target.id !== 'player' && r.owner === 'player') player.kills++;
-            }
-          });
-
-          blocks = blocks.filter(blk => Math.hypot(blk.x - r.x, blk.y - r.y) > 100);
-          ramps = ramps.filter(rmp => Math.hypot(rmp.x - r.x, rmp.y - r.y) > 100);
-          rockets.splice(i, 1); updateUI();
-        }
-      }
-
-      if (gameState === 'PLAYING') {
-        if (player.hp <= 0) { gameState = 'GAMEOVER'; gameOverReason = "¡HAS SIDO ELIMINADO!"; } 
-        else {
-          let botsVivos = bots.filter(bt => bt.hp > 0).length;
-          if (botsVivos === 0 && !player.inBus) { gameState = 'GAMEOVER'; gameOverReason = "¡VICTORIA ROYALE!"; }
-        }
       }
 
       particles.forEach((p, index) => { p.x += p.vx; p.y += p.vy; p.life--; if (p.life <= 0) particles.splice(index, 1); });
