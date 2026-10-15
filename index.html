@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>SEANBEEN 2D - Battle Royale PvP Final</title>
+  <title>SEANBEEN 2D - Battle Royale PvP Definitivo v2</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
@@ -71,7 +71,7 @@
       </div>
       <div style="display: flex; justify-content: space-between; align-items: flex-end;">
         <div class="hud-box" style="font-size: 12px; color: #ccc; line-height: 1.5;">
-          [ESPACIO] Saltar/Planeador | [A/D] Moverse | [W/S] Subir/Bajar<br>
+          [W/A/S/D] Moverse y Trepar Escaleras | [ESPACIO] Saltar<br>
           [B] Construir Muro Cerca | [F] Puerta | [E] Talar/Abrir | [R] Recargar<br>
           [4] Botiquín | [5] Poción | [1-3] Arma | Click Izq: Disparar
         </div>
@@ -108,7 +108,7 @@
     let player, bots = [], bullets = [], rockets = [], blocks = [], ramps = [];
     let particles = [], floatingTexts = [], clouds = [];
     let fixedStructures = [], interiorFloors = [], doors = [], ladders = [], launchPads = [], props = [], trees = [], chests = [], airDrops = [];
-    let startBoxes = []; // Mini cajitas de inicio con munición extra
+    let startBoxes = [];
     let decorations = [];
     let gameOverReason = "";
     let keys = {}, mouseX = 0, mouseY = 0, worldMouseX = 0, worldMouseY = 0;
@@ -200,7 +200,6 @@
         x: Math.random() * MAP_WIDTH, y: 40 + Math.random() * 200, size: 40 + Math.random() * 50, speed: 0.15 + Math.random() * 0.25
       }));
 
-      // Jugador arranca directo en el mapa (sin autobús para evitar bugs visuales)
       player = {
         id: isHost ? 'host' : 'client',
         x: 100, y: groundY - 48,
@@ -222,7 +221,7 @@
         kills: 0
       };
 
-      // Mini cajitas de inicio con munición extra
+      // Cajitas de inicio con más munición y recursos
       startBoxes = [
         { x: 180, y: groundY - 24, width: 28, height: 24, collected: false },
         { x: 350, y: groundY - 24, width: 28, height: 24, collected: false },
@@ -236,15 +235,23 @@
       ];
 
       interiorFloors = [{ x: 720, y: groundY - 120, width: 330, height: 16 }];
+      // Escaleras extendidas para poder subir hasta arriba del todo
       ladders = [{ x: 1060, y: groundY - 240, width: 30, height: 240 }];
       doors = [{ id: 1, x: 700, y: groundY - 70, width: 20, height: 70, open: false }];
 
+      // Árboles con vida reducida (10 de HP para talar rápido)
       trees = [];
       for (let i = 0; i < 15; i++) {
         let tx = 300 + (i * 280);
-        trees.push({ id: i, x: tx, y: groundY - 140, width: 60, height: 140, hp: 30, maxHp: 30 });
+        trees.push({ id: i, x: tx, y: groundY - 140, width: 60, height: 140, hp: 10, maxHp: 10 });
       }
 
+      airDrops = [
+        { x: 1200, y: -200, width: 40, height: 40, opened: false, falling: true },
+        { x: 3200, y: -800, width: 40, height: 40, opened: false, falling: true }
+      ];
+
+      // Bots posicionados lejos de los autos para evitar que queden atrapados
       for (let i = 0; i < 10; i++) {
         let spawnX = 400 + Math.random() * (MAP_WIDTH - 600); 
         bots.push({
@@ -349,12 +356,10 @@
         player.potions--; player.shield = Math.min(100, player.shield + 50); addFloatingText(player.x, player.y - 30, '+ESCUDO', '#3498db'); updateUI();
       }
 
-      // CONSTRUCCIÓN CERCANA CON TECLA B (con separación y límite de distancia para que no construya lejos)
+      // Construcción con límite de distancia
       if (k === 'b' && player.wood >= 10) {
         const gridX = Math.floor(worldMouseX / BLOCK_SIZE) * BLOCK_SIZE;
         const gridY = Math.floor(worldMouseY / BLOCK_SIZE) * BLOCK_SIZE;
-        
-        // Validar que el lugar de construcción esté CERCA del jugador (máximo 150 píxeles)
         let distToBuild = Math.hypot((gridX + BLOCK_SIZE/2) - (player.x + player.width/2), (gridY + BLOCK_SIZE/2) - (player.y + player.height/2));
         
         if (distToBuild <= 180) {
@@ -366,7 +371,7 @@
             updateUI();
           }
         } else {
-          addFloatingText(player.x, player.y - 20, '¡Muy lejos para construir!', '#e74c3c');
+          addFloatingText(player.x, player.y - 20, '¡Muy lejos!', '#e74c3c');
         }
         keys['b'] = false;
       }
@@ -471,14 +476,29 @@
         else if (storm.radius > 600) storm.radius -= 0.35;
       }
 
-      // Chequear colisión con cajitas de inicio (sin tocar teclas)
+      // Cajitas de inicio con munición reforzada
       startBoxes.forEach(box => {
         if (!box.collected && checkCollision(player, box)) {
           box.collected = true;
-          player.rifleAmmo += 15;
-          player.wood += 50;
-          addFloatingText(box.x, box.y - 15, '+15 Balas +50 Madera', '#f1c40f');
-          addParticles(box.x + 14, box.y + 12, '#f1c40f', 10);
+          player.rifleAmmo += 30;
+          player.shotgunAmmo += 8;
+          player.wood += 100;
+          addFloatingText(box.x, box.y - 15, '+30 Balas +100 Madera', '#f1c40f');
+          addParticles(box.x + 14, box.y + 12, '#f1c40f', 12);
+          updateUI();
+        }
+      });
+
+      // AirDrops para que no sean infinitos (una vez abiertos quedan opened = true)
+      airDrops.forEach(ad => {
+        if (ad.falling && isHost) {
+          ad.y += 1.2;
+          if (ad.y >= groundY - ad.height) { ad.y = groundY - ad.height; ad.falling = false; }
+        }
+        if (!ad.opened && !ad.falling && Math.abs((player.x + 13) - (ad.x + 20)) < 60 && Math.abs(player.y - ad.y) < 60) {
+          ad.opened = true;
+          player.medkits += 2; player.potions += 2; player.rifleAmmo += 40;
+          addFloatingText(ad.x, ad.y - 20, '¡DROP RECOGIDO!', '#3498db');
           updateUI();
         }
       });
@@ -488,10 +508,12 @@
       if (keys['a'] || keys['arrowleft']) { player.vx = -player.speed; player.facing = -1; }
       if (keys['d'] || keys['arrowright']) { player.vx = player.speed; player.facing = 1; }
 
+      // Sistema de escaleras mejorado para subir hasta arriba del todo
       let onLadder = ladders.some(l => checkCollision(player, l));
       if (onLadder) {
-        if (keys['w'] || keys['arrowup']) { player.vy = -4.8; player.grounded = true; }
-        else if (keys['s'] || keys['arrowdown']) { player.vy = 4.8; player.grounded = true; }
+        if (keys['w'] || keys['arrowup']) { player.vy = -5.2; player.grounded = true; }
+        else if (keys['s'] || keys['arrowdown']) { player.vy = 5.2; player.grounded = true; }
+        else { player.vy = 0; } // Se sostiene en la escalera sin caer
       } else {
         if ((keys['w'] || keys['arrowup']) && player.grounded) {
           player.vy = player.jumpPower; player.grounded = false;
@@ -581,6 +603,7 @@
       particles.forEach((p, index) => { p.x += p.vx; p.y += p.vy; p.life--; if (p.life <= 0) particles.splice(index, 1); });
       floatingTexts.forEach((ft, index) => { ft.y += ft.vy; ft.life--; if (ft.life <= 0) floatingTexts.splice(index, 1); });
 
+      // Cámara fija estrictamente en tu jugador para que el invitado no se confunda
       if (player) {
         camera.x += (player.x - canvas.width / 2 - camera.x) * 0.1;
         camera.y += (player.y - canvas.height / 2 - camera.y) * 0.1;
@@ -621,7 +644,6 @@
       ctx.save();
       ctx.translate(-camera.x, -camera.y);
 
-      // Dibujar cajitas de inicio en el suelo
       startBoxes.forEach(box => {
         if (!box.collected) {
           ctx.fillStyle = '#f1c40f';
@@ -633,6 +655,26 @@
       });
 
       fixedStructures.forEach(s => { ctx.fillStyle = s.color || '#7f8c8d'; ctx.fillRect(s.x, s.y, s.width, s.height); });
+      
+      // Dibujar escaleras
+      ladders.forEach(l => {
+        ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 3; ctx.beginPath();
+        ctx.moveTo(l.x + 5, l.y); ctx.lineTo(l.x + 5, l.y + l.height); 
+        ctx.moveTo(l.x + l.width - 5, l.y); ctx.lineTo(l.x + l.width - 5, l.y + l.height);
+        for (let y = l.y + 10; y < l.y + l.height; y += 16) { 
+          ctx.moveTo(l.x + 5, y); ctx.lineTo(l.x + l.width - 5, y); 
+        } 
+        ctx.stroke();
+      });
+
+      airDrops.forEach(ad => {
+        if (!ad.opened) {
+          ctx.fillStyle = '#3498db'; ctx.fillRect(ad.x, ad.y, ad.width, ad.height);
+          ctx.strokeStyle = '#fff'; ctx.strokeRect(ad.x, ad.y, ad.width, ad.height);
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText('DROP', ad.x + 3, ad.y + 24);
+        }
+      });
+
       ctx.fillStyle = '#27ae60'; ctx.fillRect(0, groundY, MAP_WIDTH, MAP_HEIGHT - groundY); 
       ctx.fillStyle = '#2ecc71'; ctx.fillRect(0, groundY, MAP_WIDTH, 12);
 
