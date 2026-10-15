@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>SEANBEEN 2D - Battle Royale Online PvP</title>
+  <title>SEANBEEN 2D - Battle Royale PvP Final</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
@@ -72,13 +72,13 @@
       <div style="display: flex; justify-content: space-between; align-items: flex-end;">
         <div class="hud-box" style="font-size: 12px; color: #ccc; line-height: 1.5;">
           [ESPACIO] Saltar/Planeador | [A/D] Moverse | [W/S] Subir/Bajar<br>
-          [B] Muro | [N] Rampa | [F] Puerta | [E] Luchar y Talar | [R] Recargar<br>
-          [4] Botiquín | [5] Poción | [Rueda / 1-3] Arma | Click Izq: Disparar
+          [B] Construir Muro Cerca | [F] Puerta | [E] Talar/Abrir | [R] Recargar<br>
+          [4] Botiquín | [5] Poción | [1-3] Arma | Click Izq: Disparar
         </div>
         <div class="hud-box" style="text-align: right;">
           <div id="weapon-name" style="font-size: 15px; font-weight: bold; color: #3498db;">Rifle</div>
-          <div id="ammo-cnt" style="font-size: 13px; color: #cbd5e1; margin-bottom: 5px;">Balas: 20/20</div>
-          <div style="font-size: 12px; color: #2ecc71;">Botiquín: <span id="med-cnt" style="font-weight:bold; color:#fff;">0</span> | Poción: <span id="pot-cnt" style="font-weight:bold; color:#fff;">0</span></div>
+          <div id="ammo-cnt" style="font-size: 13px; color: #cbd5e1; margin-bottom: 5px;">Balas: 30/30</div>
+          <div style="font-size: 12px; color: #2ecc71;">Botiquín: <span id="med-cnt" style="font-weight:bold; color:#fff;">1</span> | Poción: <span id="pot-cnt" style="font-weight:bold; color:#fff;">1</span></div>
         </div>
       </div>
     </div>
@@ -108,8 +108,8 @@
     let player, bots = [], bullets = [], rockets = [], blocks = [], ramps = [];
     let particles = [], floatingTexts = [], clouds = [];
     let fixedStructures = [], interiorFloors = [], doors = [], ladders = [], launchPads = [], props = [], trees = [], chests = [], airDrops = [];
+    let startBoxes = []; // Mini cajitas de inicio con munición extra
     let decorations = [];
-    let bus = { x: -200, y: 280, speed: 4.0, active: true };
     let gameOverReason = "";
     let keys = {}, mouseX = 0, mouseY = 0, worldMouseX = 0, worldMouseY = 0;
 
@@ -120,23 +120,19 @@
 
     function initPeer() {
       peer = new Peer();
-
       peer.on('open', (id) => {
         document.getElementById('connection-status').innerText = "¡Listo para jugar online!";
         document.getElementById('menu-options').style.display = 'flex';
       });
-
       peer.on('error', (err) => {
-        document.getElementById('connection-status').innerText = "Error de conexión de red.";
-        console.error(err);
+        document.getElementById('connection-status').innerText = "Error de red.";
       });
-
       peer.on('connection', (connection) => {
         conn = connection;
         isHost = true;
         setupConnectionEvents();
-        document.getElementById('connection-status').innerText = "¡Un amigo se ha conectado a tu sala!";
-        document.getElementById('lobby-status-text').innerText = "¡Amigo conectado! Pulsa empezar.";
+        document.getElementById('connection-status').innerText = "¡Amigo conectado!";
+        document.getElementById('lobby-status-text').innerText = "¡Listo para empezar!";
         document.getElementById('start-multi-btn').style.display = 'block';
       });
     }
@@ -152,6 +148,8 @@
               remotePlayer.y = data.y;
               remotePlayer.facing = data.facing;
             }
+          } else if (data.type === 'playerShoot') {
+            bullets.push(data.bullet);
           }
         } else {
           if (data.type === 'startMatch') {
@@ -161,8 +159,8 @@
           } else if (data.type === 'worldState') {
             bots = data.bots;
             storm = data.storm;
-            bus = data.bus;
             airDrops = data.airDrops;
+            startBoxes = data.startBoxes;
             if (data.hostPlayer) {
               if (!remotePlayer) {
                 remotePlayer = { id: 'remote', x: data.hostPlayer.x, y: data.hostPlayer.y, width: 26, height: 48, hp: data.hostPlayer.hp, shield: data.hostPlayer.shield, facing: data.hostPlayer.facing };
@@ -178,6 +176,8 @@
             player.hp = data.hp;
             player.shield = data.shield;
             updateUI();
+          } else if (data.type === 'bulletSpawn') {
+            bullets.push(data.bullet);
           }
         }
       });
@@ -186,23 +186,13 @@
     initPeer();
 
     const sun = { x: 1200, y: 180, radius: 45, color: '#f1c40f' };
-    
-    let storm = {
-      x: MAP_WIDTH / 2,
-      radius: MAP_WIDTH,
-      targetX: MAP_WIDTH / 2,
-      targetRadius: MAP_WIDTH,
-      phase: 0,
-      timer: 900,
-      damageTimer: 0
-    };
+    let storm = { x: MAP_WIDTH / 2, radius: MAP_WIDTH, targetX: MAP_WIDTH / 2, targetRadius: MAP_WIDTH, phase: 0, timer: 900, damageTimer: 0 };
 
     function initGame() {
       gameState = 'PLAYING';
       gameOverReason = "";
       bullets = []; rockets = []; blocks = []; ramps = []; bots = [];
-      particles = []; floatingTexts = []; airDrops = []; decorations = [];
-      bus = { x: -200, y: 280, speed: 4.0, active: true };
+      particles = []; floatingTexts = []; airDrops = []; decorations = []; startBoxes = [];
 
       storm = { x: MAP_WIDTH / 2, radius: MAP_WIDTH, targetX: MAP_WIDTH / 2, targetRadius: MAP_WIDTH, phase: 0, timer: 900, damageTimer: 0 };
 
@@ -210,109 +200,63 @@
         x: Math.random() * MAP_WIDTH, y: 40 + Math.random() * 200, size: 40 + Math.random() * 50, speed: 0.15 + Math.random() * 0.25
       }));
 
+      // Jugador arranca directo en el mapa (sin autobús para evitar bugs visuales)
       player = {
-        id: 'player',
-        x: 0, y: 280,
+        id: isHost ? 'host' : 'client',
+        x: 100, y: groundY - 48,
         width: 26, height: 48,
         vx: 0, vy: 0,
         speed: 5.2, jumpPower: -12.5,
-        grounded: false, facing: 1,
-        inBus: true, gliderOpen: false,
-        wood: 150, hp: 100, maxHp: 100,
-        shield: 0, maxShield: 100,
-        medkits: 0, potions: 0,
-        weapons: ['Rifle'],
+        grounded: true, facing: 1,
+        gliderOpen: false,
+        wood: 200, hp: 100, maxHp: 100,
+        shield: 50, maxShield: 100,
+        medkits: 1, potions: 1,
+        weapons: ['Rifle', 'Escopeta'],
         currentWeaponIndex: 0,
-        rifleAmmo: 20, maxRifleAmmo: 20,
-        shotgunAmmo: 8, maxShotgunAmmo: 8,
-        rocketAmmo: 0,
+        rifleAmmo: 30, maxRifleAmmo: 30,
+        shotgunAmmo: 12, maxShotgunAmmo: 12,
+        rocketAmmo: 5,
         isReloading: false,
         reloadTimer: 0, shootCooldown: 0, chopCooldown: 0, healCooldown: 0,
         kills: 0
       };
 
-      decorations = [
-        { type: 'barn_interior', x: 3820, y: groundY - 200, width: 380, height: 200 },
-        { type: 'barn_roof', x: 3780, y: groundY - 300, width: 460, height: 100 } 
+      // Mini cajitas de inicio con munición extra
+      startBoxes = [
+        { x: 180, y: groundY - 24, width: 28, height: 24, collected: false },
+        { x: 350, y: groundY - 24, width: 28, height: 24, collected: false },
+        { x: 550, y: groundY - 24, width: 28, height: 24, collected: false }
       ];
 
       fixedStructures = [
         { x: 700, y: groundY - 240, width: 20, height: 170, color: '#7f8c8d' },
         { x: 1100, y: groundY - 240, width: 20, height: 170, color: '#7f8c8d' },
-        { x: 700, y: groundY - 240, width: 420, height: 20, color: '#7f8c8d' },
-        { x: 2100, y: groundY - 360, width: 24, height: 285, color: '#7f8c8d' },
-        { x: 2700, y: groundY - 360, width: 24, height: 285, color: '#7f8c8d' },
-        { x: 2100, y: groundY - 360, width: 624, height: 24, color: '#7f8c8d' },
-        { x: 3800, y: groundY - 200, width: 20, height: 130, color: '#c0392b' },
-        { x: 4200, y: groundY - 200, width: 20, height: 130, color: '#c0392b' },
-        { x: 3800, y: groundY - 200, width: 420, height: 20, color: '#922b21' } 
+        { x: 700, y: groundY - 240, width: 420, height: 20, color: '#7f8c8d' }
       ];
 
-      interiorFloors = [
-        { x: 720, y: groundY - 120, width: 330, height: 16 },
-        { x: 2124, y: groundY - 120, width: 480, height: 16 },
-        { x: 2124, y: groundY - 240, width: 480, height: 16 },
-        { x: 3820, y: groundY - 100, width: 350, height: 16 }
-      ];
-
-      ladders = [
-        { x: 1060, y: groundY - 240, width: 30, height: 240 },
-        { x: 2620, y: groundY - 360, width: 30, height: 360 },
-        { x: 4150, y: groundY - 200, width: 30, height: 200 }
-      ];
-
-      doors = [
-        { id: 1, x: 700, y: groundY - 70, width: 20, height: 70, open: false },
-        { id: 2, x: 1100, y: groundY - 70, width: 20, height: 70, open: false },
-        { id: 3, x: 2100, y: groundY - 75, width: 24, height: 75, open: false },
-        { id: 4, x: 2700, y: groundY - 75, width: 24, height: 75, open: false },
-        { id: 5, x: 3800, y: groundY - 70, width: 20, height: 70, open: false },
-        { id: 6, x: 4200, y: groundY - 70, width: 20, height: 70, open: false }
-      ];
-
-      launchPads = [
-        { x: 1450, y: groundY - 14, width: 60, height: 14 },
-        { x: 3350, y: groundY - 14, width: 60, height: 14 }
-      ];
-
-      props = [
-        { type: 'car', x: 500, y: groundY - 36, width: 85, height: 36, color: '#dc2626' },
-        { type: 'car', x: 1750, y: groundY - 36, width: 85, height: 36, color: '#2563eb' }
-      ];
+      interiorFloors = [{ x: 720, y: groundY - 120, width: 330, height: 16 }];
+      ladders = [{ x: 1060, y: groundY - 240, width: 30, height: 240 }];
+      doors = [{ id: 1, x: 700, y: groundY - 70, width: 20, height: 70, open: false }];
 
       trees = [];
-      for (let i = 0; i < 22; i++) {
-        let tx = 200 + (i * 220);
-        if ((tx > 650 && tx < 1200) || (tx > 2000 && tx < 2800) || (tx > 3700 && tx < 4300)) tx += 700;
+      for (let i = 0; i < 15; i++) {
+        let tx = 300 + (i * 280);
         trees.push({ id: i, x: tx, y: groundY - 140, width: 60, height: 140, hp: 30, maxHp: 30 });
       }
 
-      chests = [
-        { id: 1, x: 760, y: groundY - 120 - 32, width: 32, height: 32, opened: false },
-        { id: 2, x: 2160, y: groundY - 120 - 32, width: 32, height: 32, opened: false },
-        { id: 3, x: 1600, y: groundY - 32, width: 32, height: 32, opened: false },
-        { id: 4, x: 3900, y: groundY - 100 - 32, width: 32, height: 32, opened: false }
-      ];
-
-      airDrops = [
-        { x: 1200, y: -200, width: 40, height: 40, opened: false, falling: true },
-        { x: 3200, y: -800, width: 40, height: 40, opened: false, falling: true }
-      ];
-
-      for (let i = 0; i < 19; i++) {
-        let spawnX = 200 + Math.random() * (MAP_WIDTH - 400); 
-        let botWeapon = Math.random() < 0.33 ? 'Escopeta' : (Math.random() < 0.5 ? 'Lanzacohetes' : 'Rifle');
+      for (let i = 0; i < 10; i++) {
+        let spawnX = 400 + Math.random() * (MAP_WIDTH - 600); 
         bots.push({
           id: 'bot_' + i,
           x: spawnX, y: groundY - 48,
           width: 26, height: 48,
           vx: 0, vy: 0,
-          speed: 3.4, hp: 100, maxHp: 100,
-          shield: 50,
-          grounded: true, shootCooldown: 0, wood: 120,
-          weapon: botWeapon,
-          ammo: botWeapon === 'Rifle' ? 20 : (botWeapon === 'Escopeta' ? 8 : 5),
-          maxAmmo: botWeapon === 'Rifle' ? 20 : (botWeapon === 'Escopeta' ? 8 : 5),
+          speed: 3.2, hp: 100, maxHp: 100,
+          shield: 25,
+          grounded: true, shootCooldown: 0,
+          weapon: 'Rifle',
+          ammo: 20, maxAmmo: 20,
           isReloading: false, reloadTimer: 0
         });
       }
@@ -351,7 +295,7 @@
       let codeInput = document.getElementById('display-room-code');
       codeInput.select();
       document.execCommand('copy');
-      alert("¡Código copiado al portapapeles!");
+      alert("¡Código copiado!");
     });
 
     document.getElementById('start-multi-btn').addEventListener('click', () => {
@@ -367,23 +311,16 @@
       let code = document.getElementById('room-code-input').value.trim();
       if (code) {
         isHost = false;
-        document.getElementById('connection-status').innerText = "Conectando a la sala...";
+        document.getElementById('connection-status').innerText = "Conectando...";
         conn = peer.connect(code);
-        
         conn.on('open', () => {
-          document.getElementById('connection-status').innerText = "¡Conectado! Esperando que el anfitrión inicie...";
+          document.getElementById('connection-status').innerText = "¡Conectado! Esperando al anfitrión...";
           document.getElementById('menu-options').style.display = 'none';
           document.getElementById('room-lobby').style.display = 'flex';
           document.getElementById('display-room-code').value = code;
           document.getElementById('start-multi-btn').style.display = 'none';
           setupConnectionEvents();
         });
-
-        conn.on('error', () => {
-          alert("No se pudo conectar a la sala. Verifica el código.");
-        });
-      } else {
-        alert("Por favor ingresa un código de sala válido.");
       }
     });
 
@@ -391,14 +328,6 @@
       if (gameState !== 'PLAYING') return;
       const k = e.key.toLowerCase();
       keys[k] = true;
-
-      if (e.code === 'Space' || k === ' ') {
-        if (player.inBus) {
-          player.inBus = false; player.x = bus.x; player.y = bus.y + 20; player.vy = 2;
-        } else if (!player.grounded) {
-          player.gliderOpen = !player.gliderOpen;
-        }
-      }
 
       if (k === 'f' && player) {
         doors.forEach(d => {
@@ -413,49 +342,37 @@
       if (k === '2' && player.weapons.includes('Escopeta')) { player.currentWeaponIndex = 1; updateUI(); }
       if (k === '3' && player.weapons.includes('Lanzacohetes')) { player.currentWeaponIndex = 2; updateUI(); }
       
-      if (k === '4' && player.medkits > 0 && player.hp < player.maxHp && player.healCooldown <= 0) {
-        player.medkits--; player.hp = 100; player.healCooldown = 60;
-        addFloatingText(player.x, player.y - 30, '+SALUD MAX', '#2ecc71');
-        addParticles(player.x + 13, player.y + 20, '#2ecc71', 15); updateUI();
+      if (k === '4' && player.medkits > 0 && player.hp < player.maxHp) {
+        player.medkits--; player.hp = 100; addFloatingText(player.x, player.y - 30, '+SALUD', '#2ecc71'); updateUI();
       }
-      if (k === '5' && player.potions > 0 && player.shield < player.maxShield && player.healCooldown <= 0) {
-        player.potions--; player.shield = Math.min(100, player.shield + 50); player.healCooldown = 60;
-        addFloatingText(player.x, player.y - 30, '+50 ESCUDO', '#3498db');
-        addParticles(player.x + 13, player.y + 20, '#3498db', 15); updateUI();
+      if (k === '5' && player.potions > 0 && player.shield < player.maxShield) {
+        player.potions--; player.shield = Math.min(100, player.shield + 50); addFloatingText(player.x, player.y - 30, '+ESCUDO', '#3498db'); updateUI();
       }
 
-      if (k === 'r' && !player.isReloading) {
-        let cw = player.weapons[player.currentWeaponIndex];
-        if (cw === 'Rifle' && player.rifleAmmo < player.maxRifleAmmo) {
-          player.isReloading = true; player.reloadTimer = 90;
-          addFloatingText(player.x, player.y - 20, 'RECARGANDO...', '#f59e0b');
-        } else if (cw === 'Escopeta' && player.shotgunAmmo < player.maxShotgunAmmo) {
-          player.isReloading = true; player.reloadTimer = 70;
-          addFloatingText(player.x, player.y - 20, 'RECARGANDO...', '#e74c3c');
-        }
-      }
-
-      if (keys['b'] && player.wood >= 10 && !player.inBus) {
+      // CONSTRUCCIÓN CERCANA CON TECLA B (con separación y límite de distancia para que no construya lejos)
+      if (k === 'b' && player.wood >= 10) {
         const gridX = Math.floor(worldMouseX / BLOCK_SIZE) * BLOCK_SIZE;
         const gridY = Math.floor(worldMouseY / BLOCK_SIZE) * BLOCK_SIZE;
-        const tempRect = { x: gridX, y: gridY, width: BLOCK_SIZE, height: BLOCK_SIZE };
-        if (!checkCollision(tempRect, player) && !blocks.some(b => b.x === gridX && b.y === gridY)) {
-          blocks.push({ x: gridX, y: gridY, width: BLOCK_SIZE, height: BLOCK_SIZE, hp: 3, maxHp: 3 });
-          player.wood -= 10; addParticles(gridX + 16, gridY + 16, '#a0522d', 6); keys['b'] = false; updateUI();
+        
+        // Validar que el lugar de construcción esté CERCA del jugador (máximo 150 píxeles)
+        let distToBuild = Math.hypot((gridX + BLOCK_SIZE/2) - (player.x + player.width/2), (gridY + BLOCK_SIZE/2) - (player.y + player.height/2));
+        
+        if (distToBuild <= 180) {
+          const tempRect = { x: gridX, y: gridY, width: BLOCK_SIZE, height: BLOCK_SIZE };
+          if (!checkCollision(tempRect, player) && !blocks.some(b => b.x === gridX && b.y === gridY)) {
+            blocks.push({ x: gridX, y: gridY, width: BLOCK_SIZE, height: BLOCK_SIZE, hp: 3, maxHp: 3 });
+            player.wood -= 10;
+            addParticles(gridX + 16, gridY + 16, '#a0522d', 6);
+            updateUI();
+          }
+        } else {
+          addFloatingText(player.x, player.y - 20, '¡Muy lejos para construir!', '#e74c3c');
         }
+        keys['b'] = false;
       }
     });
 
     window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-    window.addEventListener('wheel', e => {
-      if (gameState !== 'PLAYING') return;
-      if (player && player.weapons.length > 1 && !player.isReloading) {
-        if (e.deltaY > 0) player.currentWeaponIndex = (player.currentWeaponIndex + 1) % player.weapons.length;
-        else player.currentWeaponIndex = (player.currentWeaponIndex - 1 + player.weapons.length) % player.weapons.length;
-        updateUI();
-      }
-    });
 
     canvas.addEventListener('mousemove', e => {
       const rect = canvas.getBoundingClientRect();
@@ -471,31 +388,24 @@
 
     canvas.addEventListener('mousedown', e => {
       if (gameState !== 'PLAYING') return;
-      if (e.button === 0 && player.shootCooldown <= 0 && !player.inBus) {
+      if (e.button === 0 && player.shootCooldown <= 0) {
         const activeWeapon = player.weapons[player.currentWeaponIndex];
         const angle = Math.atan2(worldMouseY - (player.y + 20), worldMouseX - (player.x + 13));
 
-        if (activeWeapon === 'Rifle') {
-          if (player.rifleAmmo > 0 && !player.isReloading) {
-            player.rifleAmmo--;
-            bullets.push({ owner: 'player', type: 'Rifle', x: player.x + 13, y: player.y + 20, vx: Math.cos(angle) * 17, vy: Math.sin(angle) * 17, damage: 15 });
-            addParticles(player.x + 13 + Math.cos(angle) * 20, player.y + 20 + Math.sin(angle) * 20, '#f1c40f', 4);
-            player.shootCooldown = 9; updateUI();
+        if (activeWeapon === 'Rifle' && player.rifleAmmo > 0) {
+          player.rifleAmmo--;
+          let newBullet = { owner: player.id, type: 'Rifle', x: player.x + 13, y: player.y + 20, vx: Math.cos(angle) * 17, vy: Math.sin(angle) * 17, damage: 15 };
+          bullets.push(newBullet);
+          if (conn && conn.open) conn.send({ type: 'playerShoot', bullet: newBullet });
+          player.shootCooldown = 9; updateUI();
+        } else if (activeWeapon === 'Escopeta' && player.shotgunAmmo > 0) {
+          player.shotgunAmmo--;
+          for (let i = -1; i <= 1; i++) {
+            let newBullet = { owner: player.id, type: 'Escopeta', x: player.x + 13, y: player.y + 20, vx: Math.cos(angle + (i * 0.08)) * 14, vy: Math.sin(angle + (i * 0.08)) * 14, damage: 20 };
+            bullets.push(newBullet);
+            if (conn && conn.open) conn.send({ type: 'playerShoot', bullet: newBullet });
           }
-        } else if (activeWeapon === 'Escopeta') {
-          if (player.shotgunAmmo > 0 && !player.isReloading) {
-            player.shotgunAmmo--;
-            for (let i = -2; i <= 2; i++) {
-              if (i === 0) continue;
-              bullets.push({ owner: 'player', type: 'Escopeta', x: player.x + 13, y: player.y + 20, vx: Math.cos(angle + (i * 0.08)) * 14, vy: Math.sin(angle + (i * 0.08)) * 14, damage: 20 });
-            }
-            addParticles(player.x + 13 + Math.cos(angle) * 20, player.y + 20 + Math.sin(angle) * 20, '#e74c3c', 8);
-            player.shootCooldown = 45; updateUI();
-          }
-        } else if (activeWeapon === 'Lanzacohetes' && player.rocketAmmo > 0) {
-          player.rocketAmmo--;
-          rockets.push({ owner: 'player', x: player.x + 13, y: player.y + 20, vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12 });
-          player.shootCooldown = 60; updateUI();
+          player.shootCooldown = 40; updateUI();
         }
       }
     });
@@ -505,33 +415,17 @@
       document.getElementById('hp-bar').style.width = Math.max(0, (player.hp / player.maxHp) * 100) + '%';
       document.getElementById('shield-bar').style.width = Math.max(0, (player.shield / player.maxShield) * 100) + '%';
       document.getElementById('wood-cnt').innerText = player.wood;
-      document.getElementById('alive-cnt').innerText = bots.filter(b => b.hp > 0).length + (player.hp > 0 ? 1 : 0);
+      document.getElementById('alive-cnt').innerText = bots.filter(b => b.hp > 0).length + (player.hp > 0 ? 1 : 0) + (remotePlayer && remotePlayer.hp > 0 ? 1 : 0);
       document.getElementById('kill-cnt').innerText = player.kills;
       document.getElementById('med-cnt').innerText = player.medkits;
       document.getElementById('pot-cnt').innerText = player.potions;
 
       const currW = player.weapons[player.currentWeaponIndex];
       document.getElementById('weapon-name').innerText = currW;
-
       if (currW === 'Rifle') {
-        if (player.isReloading) {
-          document.getElementById('ammo-cnt').innerText = "RECARGANDO...";
-          document.getElementById('ammo-cnt').style.color = "#f59e0b";
-        } else {
-          document.getElementById('ammo-cnt').innerText = `Balas: ${player.rifleAmmo}/${player.maxRifleAmmo}`;
-          document.getElementById('ammo-cnt').style.color = "#cbd5e1";
-        }
+        document.getElementById('ammo-cnt').innerText = `Balas: ${player.rifleAmmo}/${player.maxRifleAmmo}`;
       } else if (currW === 'Escopeta') {
-        if (player.isReloading) {
-          document.getElementById('ammo-cnt').innerText = "RECARGANDO...";
-          document.getElementById('ammo-cnt').style.color = "#e74c3c";
-        } else {
-          document.getElementById('ammo-cnt').innerText = `Cartuchos: ${player.shotgunAmmo}/${player.maxShotgunAmmo}`;
-          document.getElementById('ammo-cnt').style.color = "#cbd5e1";
-        }
-      } else if (currW === 'Lanzacohetes') {
-        document.getElementById('ammo-cnt').innerText = `Cohetes: ${player.rocketAmmo}`;
-        document.getElementById('ammo-cnt').style.color = "#cbd5e1";
+        document.getElementById('ammo-cnt').innerText = `Cartuchos: ${player.shotgunAmmo}/${player.maxShotgunAmmo}`;
       }
     }
 
@@ -543,14 +437,13 @@
 
     function moveEntity(entity, obstacles) {
       entity.x += entity.vx;
-      
-      if (entity.x <= 0) { entity.x = 0; if (entity.id !== 'player') entity.vx *= -1; }
-      if (entity.x + entity.width >= MAP_WIDTH) { entity.x = MAP_WIDTH - entity.width; if (entity.id !== 'player') entity.vx *= -1; }
+      if (entity.x <= 0) entity.x = 0;
+      if (entity.x + entity.width >= MAP_WIDTH) entity.x = MAP_WIDTH - entity.width;
 
       for (let obs of obstacles) {
         if (checkCollision(entity, obs)) {
           if (entity.vx > 0) entity.x = obs.x - entity.width;
-          else if (entity.vx < 0) entity.x = obs.x + entity.width;
+          else if (entity.vx < 0) entity.x = obs.x + obs.width;
         }
       }
 
@@ -558,29 +451,10 @@
       entity.grounded = false;
       for (let obs of obstacles) {
         if (checkCollision(entity, obs)) {
-          if (entity.vy > 0) {
-            entity.y = obs.y - entity.height;
-            entity.vy = 0;
-            entity.grounded = true;
-          } else if (entity.vy < 0) {
-            entity.y = obs.y + obs.height;
-            entity.vy = 0;
-          }
+          if (entity.vy > 0) { entity.y = obs.y - entity.height; entity.vy = 0; entity.grounded = true; }
+          else if (entity.vy < 0) { entity.y = obs.y + obs.height; entity.vy = 0; }
         }
       }
-
-      ramps.forEach(r => {
-        if (entity.x + entity.width > r.x && entity.x < r.x + r.width) {
-          let progress = (entity.x + entity.width / 2 - r.x) / r.width;
-          progress = Math.max(0, Math.min(1, progress));
-          let rampY = r.y + r.height - (progress * r.height);
-          if (entity.y + entity.height >= rampY - 8 && entity.y + entity.height <= rampY + 12 && entity.vy >= 0) {
-            entity.y = rampY - entity.height;
-            entity.vy = 0;
-            entity.grounded = true;
-          }
-        }
-      });
 
       if (entity.y + entity.height >= groundY) {
         entity.y = groundY - entity.height;
@@ -593,169 +467,54 @@
       if (gameState !== 'PLAYING') return;
 
       if (isHost) {
-        if (storm.timer > 0) {
-          storm.timer--;
-        } else {
-          if (storm.radius > 600) storm.radius -= 0.35;
-        }
+        if (storm.timer > 0) storm.timer--;
+        else if (storm.radius > 600) storm.radius -= 0.35;
       }
 
-      let distToStormCenter = Math.abs((player.x + player.width/2) - storm.x);
-      let stormOverlay = document.getElementById('storm-overlay');
-      if (distToStormCenter > storm.radius) {
-        stormOverlay.style.display = 'block';
-        storm.damageTimer++;
-        if (storm.damageTimer >= 40) {
-          storm.damageTimer = 0;
-          if (player.shield > 0) {
-            player.shield = Math.max(0, player.shield - 10);
-          } else {
-            player.hp -= 10;
-          }
-          addFloatingText(player.x, player.y - 20, '-10 TORMENTA', '#8e44ad');
+      // Chequear colisión con cajitas de inicio (sin tocar teclas)
+      startBoxes.forEach(box => {
+        if (!box.collected && checkCollision(player, box)) {
+          box.collected = true;
+          player.rifleAmmo += 15;
+          player.wood += 50;
+          addFloatingText(box.x, box.y - 15, '+15 Balas +50 Madera', '#f1c40f');
+          addParticles(box.x + 14, box.y + 12, '#f1c40f', 10);
           updateUI();
-          if (player.hp <= 0) {
-            gameState = 'GAMEOVER';
-            gameOverReason = "¡ELIMINADO POR LA TORMENTA!";
-          }
-        }
-      } else {
-        stormOverlay.style.display = 'none';
-      }
-
-      if (bus.active && isHost) {
-        bus.x += bus.speed;
-        if (bus.x > MAP_WIDTH + 200) bus.active = false; 
-      }
-      if (player.inBus && bus.active) {
-        player.x = bus.x + 30;
-        player.y = bus.y + 10;
-      }
-
-      airDrops.forEach(ad => {
-        if (ad.falling && isHost) {
-          ad.y += 1.2;
-          if (ad.y >= groundY - ad.height) {
-            ad.y = groundY - ad.height;
-            ad.falling = false;
-          }
         }
       });
 
-      if (player.isReloading) {
-        player.reloadTimer--;
-        if (player.reloadTimer <= 0) {
-          player.isReloading = false;
-          let cw = player.weapons[player.currentWeaponIndex];
-          if (cw === 'Rifle') player.rifleAmmo = player.maxRifleAmmo;
-          if (cw === 'Escopeta') player.shotgunAmmo = player.maxShotgunAmmo;
-          addFloatingText(player.x, player.y - 20, '¡LISTO!', '#2ecc71');
-          updateUI();
+      let obstacles = getAllObstacles();
+      player.vx = 0;
+      if (keys['a'] || keys['arrowleft']) { player.vx = -player.speed; player.facing = -1; }
+      if (keys['d'] || keys['arrowright']) { player.vx = player.speed; player.facing = 1; }
+
+      let onLadder = ladders.some(l => checkCollision(player, l));
+      if (onLadder) {
+        if (keys['w'] || keys['arrowup']) { player.vy = -4.8; player.grounded = true; }
+        else if (keys['s'] || keys['arrowdown']) { player.vy = 4.8; player.grounded = true; }
+      } else {
+        if ((keys['w'] || keys['arrowup']) && player.grounded) {
+          player.vy = player.jumpPower; player.grounded = false;
         }
       }
 
-      if (player.healCooldown > 0) player.healCooldown--;
+      if (!player.grounded && !onLadder) player.vy += gravity;
+      moveEntity(player, obstacles);
 
-      if (!player.inBus) {
-        let obstacles = getAllObstacles();
-
-        player.vx = 0;
-        if (keys['a'] || keys['arrowleft']) { player.vx = -player.speed; player.facing = -1; }
-        if (keys['d'] || keys['arrowright']) { player.vx = player.speed; player.facing = 1; }
-
-        let onLadder = ladders.some(l => checkCollision(player, l));
-        if (onLadder) {
-          if (keys['w'] || keys['arrowup']) { player.vy = -4.8; player.grounded = true; }
-          else if (keys['s'] || keys['arrowdown']) { player.vy = 4.8; player.grounded = true; }
-        } else {
-          if ((keys['w'] || keys['arrowup']) && player.grounded) {
-            player.vy = player.jumpPower; player.grounded = false;
-          }
-        }
-
-        if (!player.grounded && !onLadder) {
-          if (player.gliderOpen && player.vy > 0) player.vy = 1.8;
-          else player.vy += gravity;
-        } else {
-          player.gliderOpen = false;
-        }
-
-        moveEntity(player, obstacles);
-
-        if (conn && conn.open) {
-          conn.send({ type: 'playerInput', x: player.x, y: player.y, facing: player.facing });
-        }
-
-        if (player.shootCooldown > 0) player.shootCooldown--;
-        if (player.chopCooldown > 0) player.chopCooldown--;
-
-        launchPads.forEach(lp => {
-          if (checkCollision(player, lp)) {
-            player.vy = -26;
-            player.gliderOpen = true;
-            addParticles(player.x + 13, player.y + 40, '#f1c40f', 15);
-            addFloatingText(player.x, player.y - 20, '¡SUPER IMPULSO!', '#f1c40f');
-          }
-        });
-
-        if (keys['e'] && player.chopCooldown <= 0) {
-          let interacted = false;
-          
-          trees.forEach(t => {
-            if (t.hp > 0 && Math.abs((player.x + 13) - (t.x + 30)) < 60 && Math.abs(player.y - t.y) < 100) {
-              t.hp -= 1; player.wood += 5; 
-              addParticles(t.x + 30, t.y + 50, '#d97706', 4); 
-              addFloatingText(t.x + 20, t.y, '+5 Madera', '#d97706');
-              interacted = true;
-            }
-          });
-
-          chests.forEach(c => {
-            if (!c.opened && Math.abs((player.x + 16) - (c.x + 16)) < 50 && Math.abs(player.y - c.y) < 50) {
-              c.opened = true;
-              player.wood += 50; player.hp = Math.min(player.maxHp, player.hp + 30);
-              player.medkits++; player.potions++;
-              if (!player.weapons.includes('Escopeta')) player.weapons.push('Escopeta');
-              player.shotgunAmmo = player.maxShotgunAmmo;
-              addFloatingText(c.x - 10, c.y - 20, '+ESCOPETA +CURAS', '#e74c3c');
-              addParticles(c.x + 16, c.y + 16, '#f1c40f', 12);
-              interacted = true;
-            }
-          });
-
-          airDrops.forEach(ad => {
-            if (!ad.opened && !ad.falling && Math.abs((player.x + 13) - (ad.x + 20)) < 60 && Math.abs(player.y - ad.y) < 60) {
-              ad.opened = true;
-              player.medkits += 2; player.potions += 2;
-              if (!player.weapons.includes('Lanzacohetes')) player.weapons.push('Lanzacohetes');
-              player.rocketAmmo += 5;
-              addFloatingText(ad.x - 20, ad.y - 20, '+LANZACOHETES +CURAS', '#9b59b6');
-              addParticles(ad.x + 20, ad.y + 20, '#3498db', 15);
-              interacted = true;
-            }
-          });
-
-          if (interacted) player.chopCooldown = 20; 
-          keys['e'] = false; 
-          updateUI();
-        }
+      if (conn && conn.open) {
+        conn.send({ type: 'playerInput', x: player.x, y: player.y, facing: player.facing });
       }
+
+      if (player.shootCooldown > 0) player.shootCooldown--;
 
       if (isHost) {
-        let obstacles = getAllObstacles();
         let allTargets = [];
-        if (player && player.hp > 0 && !player.inBus) allTargets.push(player);
+        if (player && player.hp > 0) allTargets.push(player);
         if (remotePlayer && remotePlayer.hp > 0) allTargets.push(remotePlayer);
         bots.forEach(b => { if (b.hp > 0) allTargets.push(b); });
 
         bots.forEach(bot => {
           if (bot.hp <= 0) return;
-
-          if (bot.isReloading) {
-            bot.reloadTimer--;
-            if (bot.reloadTimer <= 0) { bot.isReloading = false; bot.ammo = bot.maxAmmo; }
-          }
-
           let closestTarget = null;
           let minDist = Infinity;
           allTargets.forEach(t => {
@@ -764,53 +523,13 @@
               if (d < minDist) { minDist = d; closestTarget = t; }
             }
           });
-
           if (closestTarget && minDist < 600) {
             bot.vx = closestTarget.x > bot.x ? bot.speed : -bot.speed;
           } else {
             if (Math.random() < 0.02) bot.vx = (Math.random() - 0.5) * bot.speed * 2;
           }
-
-          let nextX = bot.x + bot.vx;
-          let touchingLadder = ladders.some(l => checkCollision(bot, l));
-          
-          if (touchingLadder && closestTarget) {
-            if (closestTarget.y < bot.y - 30) {
-              bot.vy = -4.5; bot.grounded = true;
-            } else if (closestTarget.y > bot.y + 30) {
-              bot.vy = 4.5; bot.grounded = true;
-            }
-          }
-
-          let doorNearby = doors.find(d => !d.open && Math.abs((bot.x + bot.width/2) - (d.x + d.width/2)) < 60 && Math.abs(bot.y - d.y) < 80);
-          if (doorNearby) {
-              doorNearby.open = true;
-          } else {
-              let lowObstacle = obstacles.find(obs => checkCollision({ x: nextX, y: bot.y, width: bot.width, height: bot.height }, obs));
-              if (lowObstacle && bot.grounded) {
-                if (lowObstacle.height <= 100) {
-                  bot.vy = -11; bot.grounded = false; 
-                } else {
-                  bot.vx *= -1;
-                }
-              }
-          }
-
-          if (!bot.grounded && !touchingLadder) bot.vy += gravity;
-          moveEntity(bot, getAllObstacles()); 
-
-          if (bot.shootCooldown > 0) bot.shootCooldown--;
-
-          if (closestTarget && minDist < 450 && bot.shootCooldown <= 0) {
-            if (bot.ammo > 0 && !bot.isReloading) {
-              bot.ammo--;
-              let angle = Math.atan2((closestTarget.y + 20) - (bot.y + 20), (closestTarget.x + 13) - (bot.x + 13));
-              bullets.push({ owner: bot.id, type: bot.weapon, x: bot.x + 13, y: bot.y + 20, vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, damage: 10 });
-              bot.shootCooldown = bot.weapon === 'Rifle' ? 25 : 65;
-            } else if (bot.ammo <= 0 && !bot.isReloading) {
-              bot.isReloading = true; bot.reloadTimer = 110;
-            }
-          }
+          if (!bot.grounded) bot.vy += gravity;
+          moveEntity(bot, getAllObstacles());
         });
 
         if (conn && conn.open) {
@@ -818,8 +537,8 @@
             type: 'worldState',
             bots: bots,
             storm: storm,
-            bus: bus,
             airDrops: airDrops,
+            startBoxes: startBoxes,
             hostPlayer: { x: player.x, y: player.y, hp: player.hp, shield: player.shield, facing: player.facing }
           });
         }
@@ -835,41 +554,23 @@
         doors.forEach(d => { if (!d.open) staticObstacles.push(d); });
 
         if (staticObstacles.some(obs => checkCollision(bRect, obs)) || b.y >= groundY) {
-          addParticles(b.x, b.y, '#94a3b8', 4); bullets.splice(i, 1); continue;
+          bullets.splice(i, 1); continue;
         }
 
         let allTargets = [];
-        if (player && player.hp > 0 && !player.inBus) allTargets.push(player);
-        if (remotePlayer && remotePlayer.hp > 0) allTargets.push(remotePlayer);
-        bots.forEach(b => { if (b.hp > 0) allTargets.push(b); });
+        if (player && player.hp > 0 && b.owner !== player.id) allTargets.push(player);
+        if (remotePlayer && remotePlayer.hp > 0 && b.owner !== 'remote') allTargets.push(remotePlayer);
 
         allTargets.forEach(target => {
           if (hit) return; 
-          if (b.owner !== target.id && checkCollision(bRect, target) && !(target.id === 'player' && player.inBus)) {
+          if (checkCollision(bRect, target)) {
             if (target.shield > 0) {
-              if (target.shield >= b.damage) {
-                target.shield -= b.damage;
-              } else {
-                let rem = b.damage - target.shield;
-                target.shield = 0;
-                target.hp -= rem;
-              }
-            } else {
-              target.hp -= b.damage;
-            }
-
-            addFloatingText(target.x, target.y - 15, `-${b.damage}`, '#e74c3c');
-            addParticles(target.x + 13, target.y + 20, '#e74c3c', 6);
+              if (target.shield >= b.damage) target.shield -= b.damage;
+              else { let rem = b.damage - target.shield; target.shield = 0; target.hp -= rem; }
+            } else { target.hp -= b.damage; }
             hit = true;
-
-            // Si somos host y le pegamos al cliente, le avisamos su nueva vida por red
             if (isHost && target.id === 'remote' && conn && conn.open) {
               conn.send({ type: 'damageUpdate', hp: remotePlayer.hp, shield: remotePlayer.shield });
-            }
-
-            if (target.hp <= 0 && b.owner === 'player') {
-              player.kills++; player.wood += 30;
-              addFloatingText(player.x, player.y - 35, '¡KILL! +30 MADERA', '#2ecc71');
             }
           }
         });
@@ -881,50 +582,22 @@
       floatingTexts.forEach((ft, index) => { ft.y += ft.vy; ft.life--; if (ft.life <= 0) floatingTexts.splice(index, 1); });
 
       if (player) {
-        let targetCamX = player.inBus ? bus.x : player.x;
-        let targetCamY = player.inBus ? bus.y : player.y;
-        camera.x += (targetCamX - canvas.width / 2 - camera.x) * 0.1;
-        camera.y += (targetCamY - canvas.height / 2 - camera.y) * 0.1;
+        camera.x += (player.x - canvas.width / 2 - camera.x) * 0.1;
+        camera.y += (player.y - canvas.height / 2 - camera.y) * 0.1;
         camera.x = Math.max(0, Math.min(camera.x, MAP_WIDTH - canvas.width));
         camera.y = Math.max(-200, Math.min(camera.y, MAP_HEIGHT - canvas.height));
       }
     }
 
-    function drawHumanoid(charX, charY, charW, charH, isBot, facingAngle, capColor, shirtColor, isGliderOpen, activeWeapon) {
+    function drawHumanoid(charX, charY, charW, charH, isBot, facingAngle, capColor, shirtColor) {
       ctx.save();
       ctx.translate(charX + charW / 2, charY + charH / 2);
-
-      if (isGliderOpen) {
-        ctx.strokeStyle = '#95a5a6'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(-25, -50); ctx.lineTo(0, -charH / 2); ctx.moveTo(25, -50); ctx.lineTo(0, -charH / 2); ctx.stroke();
-        ctx.fillStyle = isBot ? '#e74c3c' : '#3498db';
-        ctx.beginPath(); ctx.arc(0, -50, 30, Math.PI, 0, false); ctx.fill();
-      }
-
       let isFacingRight = Math.cos(facingAngle) >= 0;
       ctx.fillStyle = '#2c3e50'; ctx.fillRect(isFacingRight ? -14 : 8, -12, 6, 16); 
       ctx.fillStyle = '#1a252f'; ctx.fillRect(-8, 8, 6, 16); ctx.fillRect(2, 8, 6, 16); 
       ctx.fillStyle = shirtColor; ctx.fillRect(-10, -12, 20, 20); 
       ctx.fillStyle = '#f5cba7'; ctx.beginPath(); ctx.arc(0, -18, 9, 0, Math.PI * 2); ctx.fill(); 
-      ctx.fillStyle = capColor; ctx.beginPath(); ctx.arc(0, -20, 9.5, Math.PI, 0, false); ctx.fill(); ctx.fillRect(isFacingRight ? 0 : -12, -21, 12, 3); 
-      ctx.fillStyle = '#000'; ctx.fillRect(isFacingRight ? 4 : -6, -19, 2, 3); 
-
-      ctx.save();
-      ctx.rotate(facingAngle);
-      if (activeWeapon === 'Escopeta') {
-        ctx.fillStyle = '#111'; ctx.fillRect(0, -3, 15, 6);       
-        ctx.fillStyle = '#444'; ctx.fillRect(6, -2, 7, 5);        
-        ctx.fillStyle = '#8e44ad'; ctx.fillRect(0, 3, 5, 5);      
-      } else if (activeWeapon === 'Lanzacohetes') {
-        ctx.fillStyle = '#27ae60'; ctx.fillRect(-4, -6, 22, 10);  
-        ctx.fillStyle = '#111'; ctx.fillRect(18, -4, 3, 6);       
-        ctx.fillStyle = '#8e44ad'; ctx.fillRect(6, 4, 4, 5);      
-      } else { 
-        ctx.fillStyle = '#7f8c8d'; ctx.fillRect(0, -2, 18, 4);    
-        ctx.fillStyle = '#78350f'; ctx.fillRect(0, -1, 7, 4);     
-        ctx.fillStyle = '#8e44ad'; ctx.fillRect(2, 2, 4, 5);      
-      }
-      ctx.restore();
+      ctx.fillStyle = capColor; ctx.beginPath(); ctx.arc(0, -20, 9.5, Math.PI, 0, false); ctx.fill(); 
       ctx.restore();
     }
 
@@ -933,29 +606,11 @@
       let scaleX = minimapCanvas.width / MAP_WIDTH;
       let scaleY = minimapCanvas.height / MAP_HEIGHT;
 
-      // Tormenta en minimap
-      let stormMinimapX = (storm.x - storm.radius) * scaleX;
-      let stormMinimapWidth = (storm.radius * 2) * scaleX;
-      minimapCtx.fillStyle = 'rgba(142, 68, 173, 0.4)';
-      minimapCtx.fillRect(stormMinimapX, 0, stormMinimapWidth, minimapCanvas.height);
-
-      // Dibujar estructuras fijas en el minimapa (color gris)
       minimapCtx.fillStyle = '#7f8c8d';
-      fixedStructures.forEach(s => {
-        minimapCtx.fillRect(s.x * scaleX, s.y * scaleY, s.width * scaleX, s.height * scaleY);
-      });
+      fixedStructures.forEach(s => minimapCtx.fillRect(s.x * scaleX, s.y * scaleY, s.width * scaleX, s.height * scaleY));
 
-      // Dibujar jugador principal en minimapa (azul)
-      if (player) {
-        minimapCtx.fillStyle = '#3498db';
-        minimapCtx.fillRect(player.x * scaleX, player.y * scaleY, 4, 4);
-      }
-
-      // Dibujar amigo remoto en minimapa (morado)
-      if (remotePlayer) {
-        minimapCtx.fillStyle = '#9b59b6';
-        minimapCtx.fillRect(remotePlayer.x * scaleX, remotePlayer.y * scaleY, 4, 4);
-      }
+      if (player) { minimapCtx.fillStyle = '#3498db'; minimapCtx.fillRect(player.x * scaleX, player.y * scaleY, 4, 4); }
+      if (remotePlayer) { minimapCtx.fillStyle = '#9b59b6'; minimapCtx.fillRect(remotePlayer.x * scaleX, remotePlayer.y * scaleY, 4, 4); }
     }
 
     function draw() {
@@ -966,167 +621,47 @@
       ctx.save();
       ctx.translate(-camera.x, -camera.y);
 
-      ctx.fillStyle = 'rgba(142, 68, 173, 0.2)';
-      ctx.fillRect(storm.x - storm.radius, 0, storm.radius * 2, MAP_HEIGHT);
-      ctx.strokeStyle = '#8e44ad';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(storm.x - storm.radius, 0); ctx.lineTo(storm.x - storm.radius, MAP_HEIGHT);
-      ctx.moveTo(storm.x + storm.radius, 0); ctx.lineTo(storm.x + storm.radius, MAP_HEIGHT);
-      ctx.stroke();
-
-      ctx.save(); ctx.beginPath(); ctx.arc(sun.x, sun.y, sun.radius + 15, 0, Math.PI * 2); ctx.fillStyle = 'rgba(241, 196, 15, 0.3)'; ctx.fill();
-      ctx.beginPath(); ctx.arc(sun.x, sun.y, sun.radius, 0, Math.PI * 2); ctx.fillStyle = sun.color; ctx.fill(); ctx.restore();
-
-      clouds.forEach(c => {
-        c.x += c.speed; if (c.x > MAP_WIDTH) c.x = -100;
-        ctx.fillStyle = '#ffffff'; ctx.beginPath();
-        ctx.arc(c.x, c.y, c.size, 0, Math.PI * 2); ctx.arc(c.x + c.size * 0.6, c.y - c.size * 0.2, c.size * 0.7, 0, Math.PI * 2); ctx.arc(c.x + c.size * 1.2, c.y, c.size * 0.8, 0, Math.PI * 2); ctx.fill();
-      });
-
-      decorations.forEach(dec => {
-        if (dec.type === 'barn_interior') {
-          ctx.fillStyle = '#641e16'; ctx.fillRect(dec.x, dec.y, dec.width, dec.height);
-        } else if (dec.type === 'barn_roof') {
-          ctx.fillStyle = '#922b21'; 
-          ctx.beginPath(); ctx.moveTo(dec.x, dec.y + dec.height); ctx.lineTo(dec.x + dec.width / 2, dec.y); ctx.lineTo(dec.x + dec.width, dec.y + dec.height); ctx.closePath();
-          ctx.fill(); ctx.strokeStyle = '#641e16'; ctx.lineWidth = 4; ctx.stroke();
+      // Dibujar cajitas de inicio en el suelo
+      startBoxes.forEach(box => {
+        if (!box.collected) {
+          ctx.fillStyle = '#f1c40f';
+          ctx.fillRect(box.x, box.y, box.width, box.height);
+          ctx.strokeStyle = '#d35400';
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+          ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('START', box.x + 2, box.y + 15);
         }
       });
 
-      fixedStructures.forEach(s => { 
-        ctx.fillStyle = s.color || '#7f8c8d'; ctx.fillRect(s.x, s.y, s.width, s.height); 
-        ctx.strokeStyle = '#2c3e50'; ctx.strokeRect(s.x, s.y, s.width, s.height); 
-      });
-      
-      interiorFloors.forEach(f => { ctx.fillStyle = '#95a5a6'; ctx.fillRect(f.x, f.y, f.width, f.height); });
-      
-      ladders.forEach(l => {
-        ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 3; ctx.beginPath();
-        ctx.moveTo(l.x + 5, l.y); ctx.lineTo(l.x + 5, l.y + l.height); ctx.moveTo(l.x + l.width - 5, l.y); ctx.lineTo(l.x + l.width - 5, l.y + l.height);
-        for (let y = l.y + 10; y < l.y + l.height; y += 16) { ctx.moveTo(l.x + 5, y); ctx.lineTo(l.x + l.width - 5, y); } ctx.stroke();
-      });
-
-      doors.forEach(d => {
-        ctx.fillStyle = '#641e16'; ctx.fillRect(d.x - 2, d.y - 2, d.width + 4, d.height + 2);
-        if (!d.open) {
-          ctx.fillStyle = '#f1c40f'; ctx.fillRect(d.x, d.y, d.width, d.height);
-          ctx.strokeStyle = '#d35400'; ctx.strokeRect(d.x, d.y, d.width, d.height);
-          ctx.fillStyle = '#000'; ctx.fillRect(d.x + 4, d.y + d.height / 2, 4, 4);
-        } else {
-          ctx.fillStyle = 'rgba(241, 196, 15, 0.2)'; ctx.fillRect(d.x, d.y, d.width, d.height);
-        }
-      });
-
-      launchPads.forEach(lp => {
-        ctx.fillStyle = '#e67e22'; ctx.fillRect(lp.x, lp.y, lp.width, lp.height);
-        ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.moveTo(lp.x + lp.width / 2, lp.y + 2); ctx.lineTo(lp.x + 10, lp.y + lp.height - 2); ctx.lineTo(lp.x + lp.width - 10, lp.y + lp.height - 2); ctx.closePath(); ctx.fill();
-      });
-
-      ctx.fillStyle = '#27ae60'; ctx.fillRect(0, groundY, MAP_WIDTH, MAP_HEIGHT - groundY); ctx.fillStyle = '#2ecc71'; ctx.fillRect(0, groundY, MAP_WIDTH, 12);
-
-      props.forEach(p => {
-        if (p.type === 'car') {
-          ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.width, p.height);
-          ctx.fillStyle = '#34495e'; ctx.fillRect(p.x + 10, p.y + 6, 20, 12); ctx.fillRect(p.x + p.width - 25, p.y + 6, 18, 12);
-          ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(p.x + 18, p.y + p.height, 9, 0, Math.PI * 2); ctx.arc(p.x + p.width - 18, p.y + p.height, 9, 0, Math.PI * 2); ctx.fill();
-        }
-      });
-
-      trees.forEach(t => {
-        if (t.hp > 0) {
-          ctx.fillStyle = '#78350f'; ctx.fillRect(t.x + 22, t.y + 50, 16, 90); 
-          ctx.fillStyle = '#2ecc71'; ctx.beginPath(); ctx.arc(t.x + 30, t.y + 45, 40, 0, Math.PI * 2); ctx.fill(); 
-        }
-      });
-
-      chests.forEach(c => {
-        ctx.fillStyle = c.opened ? '#d35400' : '#f1c40f'; ctx.fillRect(c.x, c.y, c.width, c.height); ctx.strokeStyle = '#fff'; ctx.strokeRect(c.x, c.y, c.width, c.height);
-        if (!c.opened) { ctx.fillStyle = '#f39c12'; ctx.fillRect(c.x + 12, c.y + 12, 8, 8); }
-      });
-
-      airDrops.forEach(ad => {
-        if (!ad.opened) {
-          ctx.fillStyle = '#3498db'; ctx.fillRect(ad.x, ad.y, ad.width, ad.height);
-          ctx.strokeStyle = '#fff'; ctx.strokeRect(ad.x, ad.y, ad.width, ad.height);
-          ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText('DROP', ad.x + 3, ad.y + 24);
-          if (ad.falling) {
-            ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(ad.x + ad.width/2, ad.y - 15, 25, Math.PI, 0); ctx.fill();
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath();
-            ctx.moveTo(ad.x, ad.y); ctx.lineTo(ad.x - 5, ad.y - 15); ctx.moveTo(ad.x + ad.width, ad.y); ctx.lineTo(ad.x + ad.width + 5, ad.y - 15); ctx.stroke();
-          }
-        }
-      });
+      fixedStructures.forEach(s => { ctx.fillStyle = s.color || '#7f8c8d'; ctx.fillRect(s.x, s.y, s.width, s.height); });
+      ctx.fillStyle = '#27ae60'; ctx.fillRect(0, groundY, MAP_WIDTH, MAP_HEIGHT - groundY); 
+      ctx.fillStyle = '#2ecc71'; ctx.fillRect(0, groundY, MAP_WIDTH, 12);
 
       blocks.forEach(b => {
-        let ratio = b.hp / b.maxHp; ctx.fillStyle = `rgb(${Math.floor(211 * ratio)}, ${Math.floor(84 * ratio)}, 0)`;
-        ctx.fillRect(b.x, b.y, b.width, b.height); ctx.strokeStyle = '#8e44ad'; ctx.strokeRect(b.x, b.y, b.width, b.height);
-      });
-      ramps.forEach(r => {
-        let ratio = r.hp / r.maxHp; ctx.fillStyle = `rgb(${Math.floor(230 * ratio)}, ${Math.floor(126 * ratio)}, 34)`;
-        ctx.beginPath(); ctx.moveTo(r.x, r.y + r.height); ctx.lineTo(r.x + r.width, r.y); ctx.lineTo(r.x + r.width, r.y + r.height); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#d97706'; ctx.fillRect(b.x, b.y, b.width, b.height);
+        ctx.strokeStyle = '#8e44ad'; ctx.strokeRect(b.x, b.y, b.width, b.height);
       });
 
       bots.forEach(bot => {
         if (bot.hp <= 0) return;
-        let botAngle = 0;
-        if (player && player.hp > 0 && !player.inBus) botAngle = Math.atan2((player.y + 20) - (bot.y + 20), (player.x + 13) - (bot.x + 13));
-        drawHumanoid(bot.x, bot.y, bot.width, bot.height, true, botAngle, '#c0392b', '#e74c3c', false, bot.weapon);
-        ctx.fillStyle = '#000'; ctx.fillRect(bot.x, bot.y - 12, bot.width, 5);
-        ctx.fillStyle = '#e74c3c'; ctx.fillRect(bot.x, bot.y - 12, (bot.hp / bot.maxHp) * bot.width, 5);
+        drawHumanoid(bot.x, bot.y, bot.width, bot.height, true, 0, '#c0392b', '#e74c3c');
       });
 
-      if (player && player.hp > 0 && !player.inBus) {
+      if (player && player.hp > 0) {
         let playerAngle = Math.atan2(worldMouseY - (player.y + 20), worldMouseX - (player.x + 13));
-        drawHumanoid(player.x, player.y, player.width, player.height, false, playerAngle, '#27ae60', '#2980b9', player.gliderOpen, player.weapons[player.currentWeaponIndex]);
+        drawHumanoid(player.x, player.y, player.width, player.height, false, playerAngle, '#27ae60', '#2980b9');
       }
 
       if (remotePlayer && remotePlayer.hp > 0) {
-        drawHumanoid(remotePlayer.x, remotePlayer.y, remotePlayer.width, remotePlayer.height, false, remotePlayer.facing || 1, '#8e44ad', '#9b59b6', false, 'Rifle');
-      }
-
-      if (bus.active) {
-        ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(bus.x + 45, bus.y - 35, 40, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(bus.x + 15, bus.y); ctx.lineTo(bus.x + 25, bus.y - 30); ctx.moveTo(bus.x + 75, bus.y); ctx.lineTo(bus.x + 65, bus.y - 30); ctx.stroke();
-        ctx.fillStyle = '#3498db'; ctx.fillRect(bus.x, bus.y, 90, 36);
-        ctx.fillStyle = '#f1c40f'; for (let wx = bus.x + 10; wx < bus.x + 80; wx += 16) ctx.fillRect(wx, bus.y + 8, 10, 12);
-        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(bus.x + 20, bus.y + 36, 8, 0, Math.PI * 2); ctx.arc(bus.x + 70, bus.y + 36, 8, 0, Math.PI * 2); ctx.fill();
+        drawHumanoid(remotePlayer.x, remotePlayer.y, remotePlayer.width, remotePlayer.height, false, remotePlayer.facing || 1, '#8e44ad', '#9b59b6');
       }
 
       ctx.fillStyle = '#f1c40f'; bullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2); ctx.fill(); });
-      
-      rockets.forEach(r => { 
-        ctx.save();
-        ctx.translate(r.x, r.y);
-        let angle = Math.atan2(r.vy, r.vx);
-        ctx.rotate(angle);
-        
-        ctx.fillStyle = '#7f8c8d'; 
-        ctx.fillRect(-8, -4, 16, 8);
-        ctx.fillStyle = '#e74c3c';
-        ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(14, 0); ctx.lineTo(8, 4); ctx.fill();
-        ctx.fillStyle = '#f1c40f';
-        ctx.beginPath(); ctx.moveTo(-8, -3); ctx.lineTo(-14, 0); ctx.lineTo(-8, 3); ctx.fill();
-        
-        ctx.restore();
-      });
-
       particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
       floatingTexts.forEach(ft => { ctx.fillStyle = ft.color; ctx.font = 'bold 14px sans-serif'; ctx.fillText(ft.text, ft.x, ft.y); });
       
       ctx.restore();
 
-      if (gameState === 'PLAYING') {
-        drawMinimap();
-      }
-
-      if (gameState === 'GAMEOVER') {
-        let isWin = gameOverReason.includes("VICTORIA");
-        ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = isWin ? '#2ecc71' : '#e74c3c'; ctx.font = 'bold 42px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(gameOverReason, canvas.width / 2, canvas.height / 2 - 20);
-        ctx.fillStyle = '#fff'; ctx.font = '20px sans-serif'; ctx.fillText('Recarga la página para jugar otra vez', canvas.width / 2, canvas.height / 2 + 30);
-      }
+      if (gameState === 'PLAYING') drawMinimap();
     }
 
     function gameLoop() {
