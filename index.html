@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>SEANBEEN 2D - Battle Royale Online Sincronizado</title>
+  <title>SEANBEEN 2D - Battle Royale Online PvP</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
@@ -48,8 +48,8 @@
           <input type="text" id="display-room-code" readonly style="flex: 1; padding: 10px; font-size: 14px; font-weight: bold; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 5px; text-align: center;">
           <button id="copy-code-btn" style="padding: 10px 15px; font-size: 14px; background: #2980b9; color: white; border: none; border-radius: 5px; cursor: pointer;">Copiar</button>
         </div>
-        <p style="font-size: 13px; color: #aaa; text-align: center;">Pega este código en la otra computadora para conectarte.</p>
-        <button id="start-multi-btn" style="padding: 12px 30px; font-size: 16px; font-weight: bold; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 5px;">Empezar Partida</button>
+        <p id="lobby-status-text" style="font-size: 13px; color: #aaa; text-align: center;">Esperando jugadores...</p>
+        <button id="start-multi-btn" style="padding: 12px 30px; font-size: 16px; font-weight: bold; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 5px; display: none;">Empezar Partida</button>
       </div>
     </div>
 
@@ -109,7 +109,7 @@
     let particles = [], floatingTexts = [], clouds = [];
     let fixedStructures = [], interiorFloors = [], doors = [], ladders = [], launchPads = [], props = [], trees = [], chests = [], airDrops = [];
     let decorations = [];
-    let bus = { x: 0, y: 280, speed: 4.0, active: true };
+    let bus = { x: -200, y: 280, speed: 4.0, active: true };
     let gameOverReason = "";
     let keys = {}, mouseX = 0, mouseY = 0, worldMouseX = 0, worldMouseY = 0;
 
@@ -136,25 +136,48 @@
         isHost = true;
         setupConnectionEvents();
         document.getElementById('connection-status').innerText = "¡Un amigo se ha conectado a tu sala!";
+        document.getElementById('lobby-status-text').innerText = "¡Amigo conectado! Pulsa empezar.";
+        document.getElementById('start-multi-btn').style.display = 'block';
       });
     }
 
     function setupConnectionEvents() {
       conn.on('data', (data) => {
         if (isHost) {
-          if (!remotePlayer) {
-            remotePlayer = { x: data.x, y: data.y, hp: 100, shield: 50, facing: data.facing };
-          } else {
-            remotePlayer.x = data.x;
-            remotePlayer.y = data.y;
-            remotePlayer.facing = data.facing;
+          if (data.type === 'playerInput') {
+            if (!remotePlayer) {
+              remotePlayer = { id: 'remote', x: data.x, y: data.y, width: 26, height: 48, hp: 100, shield: 50, facing: data.facing };
+            } else {
+              remotePlayer.x = data.x;
+              remotePlayer.y = data.y;
+              remotePlayer.facing = data.facing;
+            }
           }
         } else {
-          // Si somos cliente, recibimos la lista de bots exacta y la tormenta del Host
-          if (data.type === 'worldState') {
+          if (data.type === 'startMatch') {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('hud').style.display = 'flex';
+            initGame();
+          } else if (data.type === 'worldState') {
             bots = data.bots;
             storm = data.storm;
             bus = data.bus;
+            airDrops = data.airDrops;
+            if (data.hostPlayer) {
+              if (!remotePlayer) {
+                remotePlayer = { id: 'remote', x: data.hostPlayer.x, y: data.hostPlayer.y, width: 26, height: 48, hp: data.hostPlayer.hp, shield: data.hostPlayer.shield, facing: data.hostPlayer.facing };
+              } else {
+                remotePlayer.x = data.hostPlayer.x;
+                remotePlayer.y = data.hostPlayer.y;
+                remotePlayer.hp = data.hostPlayer.hp;
+                remotePlayer.shield = data.hostPlayer.shield;
+                remotePlayer.facing = data.hostPlayer.facing;
+              }
+            }
+          } else if (data.type === 'damageUpdate') {
+            player.hp = data.hp;
+            player.shield = data.shield;
+            updateUI();
           }
         }
       });
@@ -179,7 +202,7 @@
       gameOverReason = "";
       bullets = []; rockets = []; blocks = []; ramps = []; bots = [];
       particles = []; floatingTexts = []; airDrops = []; decorations = [];
-      bus = { x: 0, y: 280, speed: 4.0, active: true };
+      bus = { x: -200, y: 280, speed: 4.0, active: true };
 
       storm = { x: MAP_WIDTH / 2, radius: MAP_WIDTH, targetX: MAP_WIDTH / 2, targetRadius: MAP_WIDTH, phase: 0, timer: 900, damageTimer: 0 };
 
@@ -321,6 +344,7 @@
       document.getElementById('room-lobby').style.display = 'flex';
       isHost = true;
       document.getElementById('display-room-code').value = peer.id;
+      document.getElementById('start-multi-btn').style.display = 'block';
     });
 
     document.getElementById('copy-code-btn').addEventListener('click', () => {
@@ -334,6 +358,9 @@
       document.getElementById('start-screen').style.display = 'none';
       document.getElementById('hud').style.display = 'flex';
       initGame(); 
+      if (conn && conn.open) {
+        conn.send({ type: 'startMatch' });
+      }
     });
 
     document.getElementById('join-room-btn').addEventListener('click', () => {
@@ -344,9 +371,11 @@
         conn = peer.connect(code);
         
         conn.on('open', () => {
-          document.getElementById('start-screen').style.display = 'none';
-          document.getElementById('hud').style.display = 'flex';
-          initGame();
+          document.getElementById('connection-status').innerText = "¡Conectado! Esperando que el anfitrión inicie...";
+          document.getElementById('menu-options').style.display = 'none';
+          document.getElementById('room-lobby').style.display = 'flex';
+          document.getElementById('display-room-code').value = code;
+          document.getElementById('start-multi-btn').style.display = 'none';
           setupConnectionEvents();
         });
 
@@ -521,7 +550,7 @@
       for (let obs of obstacles) {
         if (checkCollision(entity, obs)) {
           if (entity.vx > 0) entity.x = obs.x - entity.width;
-          else if (entity.vx < 0) entity.x = obs.x + obs.width;
+          else if (entity.vx < 0) entity.x = obs.x + entity.width;
         }
       }
 
@@ -596,9 +625,9 @@
 
       if (bus.active && isHost) {
         bus.x += bus.speed;
-        if (bus.x > MAP_WIDTH) bus.x = -200; 
+        if (bus.x > MAP_WIDTH + 200) bus.active = false; 
       }
-      if (player.inBus) {
+      if (player.inBus && bus.active) {
         player.x = bus.x + 30;
         player.y = bus.y + 10;
       }
@@ -712,7 +741,6 @@
         }
       }
 
-      // Si somos Host, procesamos los bots y enviamos el estado al cliente
       if (isHost) {
         let obstacles = getAllObstacles();
         let allTargets = [];
@@ -785,13 +813,14 @@
           }
         });
 
-        // Enviar estado del mundo al cliente conectado
         if (conn && conn.open) {
           conn.send({
             type: 'worldState',
             bots: bots,
             storm: storm,
-            bus: bus
+            bus: bus,
+            airDrops: airDrops,
+            hostPlayer: { x: player.x, y: player.y, hp: player.hp, shield: player.shield, facing: player.facing }
           });
         }
       }
@@ -807,20 +836,6 @@
 
         if (staticObstacles.some(obs => checkCollision(bRect, obs)) || b.y >= groundY) {
           addParticles(b.x, b.y, '#94a3b8', 4); bullets.splice(i, 1); continue;
-        }
-
-        let hitBlockIndex = blocks.findIndex(blk => checkCollision(bRect, blk));
-        if (hitBlockIndex !== -1) {
-          blocks[hitBlockIndex].hp--; addParticles(b.x, b.y, '#d97706', 4);
-          if (blocks[hitBlockIndex].hp <= 0) blocks.splice(hitBlockIndex, 1);
-          bullets.splice(i, 1); continue;
-        }
-
-        let hitRampIndex = ramps.findIndex(rmp => checkCollision(bRect, rmp));
-        if (hitRampIndex !== -1) {
-          ramps[hitRampIndex].hp--; addParticles(b.x, b.y, '#d97706', 4);
-          if (ramps[hitRampIndex].hp <= 0) ramps.splice(hitRampIndex, 1);
-          bullets.splice(i, 1); continue;
         }
 
         let allTargets = [];
@@ -846,6 +861,12 @@
             addFloatingText(target.x, target.y - 15, `-${b.damage}`, '#e74c3c');
             addParticles(target.x + 13, target.y + 20, '#e74c3c', 6);
             hit = true;
+
+            // Si somos host y le pegamos al cliente, le avisamos su nueva vida por red
+            if (isHost && target.id === 'remote' && conn && conn.open) {
+              conn.send({ type: 'damageUpdate', hp: remotePlayer.hp, shield: remotePlayer.shield });
+            }
+
             if (target.hp <= 0 && b.owner === 'player') {
               player.kills++; player.wood += 30;
               addFloatingText(player.x, player.y - 35, '¡KILL! +30 MADERA', '#2ecc71');
@@ -912,14 +933,28 @@
       let scaleX = minimapCanvas.width / MAP_WIDTH;
       let scaleY = minimapCanvas.height / MAP_HEIGHT;
 
+      // Tormenta en minimap
       let stormMinimapX = (storm.x - storm.radius) * scaleX;
       let stormMinimapWidth = (storm.radius * 2) * scaleX;
       minimapCtx.fillStyle = 'rgba(142, 68, 173, 0.4)';
       minimapCtx.fillRect(stormMinimapX, 0, stormMinimapWidth, minimapCanvas.height);
 
+      // Dibujar estructuras fijas en el minimapa (color gris)
+      minimapCtx.fillStyle = '#7f8c8d';
+      fixedStructures.forEach(s => {
+        minimapCtx.fillRect(s.x * scaleX, s.y * scaleY, s.width * scaleX, s.height * scaleY);
+      });
+
+      // Dibujar jugador principal en minimapa (azul)
       if (player) {
         minimapCtx.fillStyle = '#3498db';
         minimapCtx.fillRect(player.x * scaleX, player.y * scaleY, 4, 4);
+      }
+
+      // Dibujar amigo remoto en minimapa (morado)
+      if (remotePlayer) {
+        minimapCtx.fillStyle = '#9b59b6';
+        minimapCtx.fillRect(remotePlayer.x * scaleX, remotePlayer.y * scaleY, 4, 4);
       }
     }
 
@@ -1047,7 +1082,7 @@
       }
 
       if (remotePlayer && remotePlayer.hp > 0) {
-        drawHumanoid(remotePlayer.x, remotePlayer.y, 26, 48, false, 0, '#8e44ad', '#9b59b6', false, 'Rifle');
+        drawHumanoid(remotePlayer.x, remotePlayer.y, remotePlayer.width, remotePlayer.height, false, remotePlayer.facing || 1, '#8e44ad', '#9b59b6', false, 'Rifle');
       }
 
       if (bus.active) {
