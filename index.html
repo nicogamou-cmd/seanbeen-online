@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>SEANBEEN 2D - v2.5 Final</title>
+  <title>SEANBEEN 2D - v2.6 Mapa Reparado</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
@@ -31,7 +31,7 @@
     
     <div id="start-screen">
       <h1 style="font-size: 70px; color: #f1c40f; text-shadow: 4px 4px 0px #d35400;">SEANBEEN 2D</h1>
-      <p style="font-size: 18px; color: #2ecc71; font-weight: bold; margin-top: -5px; margin-bottom: 15px;">VERSIÓN 2.5 — PvP Definitivo</p>
+      <p style="font-size: 18px; color: #2ecc71; font-weight: bold; margin-top: -5px; margin-bottom: 15px;">VERSIÓN 2.6 — Mapa Reparado</p>
       <p id="connection-status" style="font-size: 16px; color: #3498db; margin-top: 5px;">Conectando al servidor de red...</p>
       
       <div id="menu-options" style="display: none; flex-direction: column; gap: 15px; width: 300px; text-align: center; margin-top: 20px;">
@@ -57,7 +57,7 @@
     <div id="hud">
       <div style="display: flex; justify-content: space-between; align-items: flex-start;">
         <div class="hud-box">
-          <div style="font-weight: bold; color: #f1c40f; font-size: 16px;">SEANBEEN 2D <span style="font-size: 10px; color: #aaa;">v2.5</span></div>
+          <div style="font-weight: bold; color: #f1c40f; font-size: 16px;">SEANBEEN 2D <span style="font-size: 10px; color: #aaa;">v2.6</span></div>
           <div class="bar-bg"><div id="hp-bar" class="bar-hp"></div></div>
           <div class="bar-bg" style="margin-top: 3px;"><div id="shield-bar" class="bar-shield"></div></div>
           <div style="margin-top: 6px; font-size: 13px;">MADERA: <span id="wood-cnt" style="color: #d97706; font-weight: bold;">150</span></div>
@@ -122,7 +122,7 @@
     function initPeer() {
       peer = new Peer();
       peer.on('open', (id) => {
-        document.getElementById('connection-status').innerText = "¡Listo para jugar online (v2.5)!";
+        document.getElementById('connection-status').innerText = "¡Listo para jugar online (v2.6)!";
         document.getElementById('menu-options').style.display = 'flex';
       });
       peer.on('error', (err) => {
@@ -228,19 +228,36 @@
         { x: 550, y: groundY - 24, width: 28, height: 24, collected: false }
       ];
 
+      // MAPA COMPLETO Y RESTAURADO
       fixedStructures = [
         { x: 700, y: groundY - 240, width: 20, height: 170, color: '#7f8c8d' },
         { x: 1100, y: groundY - 240, width: 20, height: 170, color: '#7f8c8d' },
-        { x: 700, y: groundY - 240, width: 420, height: 20, color: '#7f8c8d' }
+        { x: 700, y: groundY - 240, width: 420, height: 20, color: '#7f8c8d' },
+        { x: 2100, y: groundY - 360, width: 24, height: 285, color: '#7f8c8d' },
+        { x: 2700, y: groundY - 360, width: 24, height: 285, color: '#7f8c8d' },
+        { x: 2100, y: groundY - 360, width: 624, height: 24, color: '#7f8c8d' }
       ];
 
-      interiorFloors = [{ x: 720, y: groundY - 120, width: 330, height: 16 }];
-      ladders = [{ x: 1060, y: groundY - 240, width: 30, height: 240 }];
-      doors = [{ id: 1, x: 700, y: groundY - 70, width: 20, height: 70, open: false }];
+      interiorFloors = [
+        { x: 720, y: groundY - 120, width: 330, height: 16 },
+        { x: 2124, y: groundY - 120, width: 480, height: 16 },
+        { x: 2124, y: groundY - 240, width: 480, height: 16 }
+      ];
+
+      ladders = [
+        { x: 1060, y: groundY - 240, width: 30, height: 240 },
+        { x: 2620, y: groundY - 360, width: 30, height: 360 }
+      ];
+
+      doors = [
+        { id: 1, x: 700, y: groundY - 70, width: 20, height: 70, open: false },
+        { id: 2, x: 1100, y: groundY - 70, width: 20, height: 70, open: false },
+        { id: 3, x: 2100, y: groundY - 75, width: 24, height: 75, open: false }
+      ];
 
       trees = [];
-      for (let i = 0; i < 15; i++) {
-        let tx = 300 + (i * 280);
+      for (let i = 0; i < 18; i++) {
+        let tx = 300 + (i * 240);
         trees.push({ id: i, x: tx, y: groundY - 140, width: 60, height: 140, hp: 10, maxHp: 10 });
       }
 
@@ -647,6 +664,7 @@
       });
 
       fixedStructures.forEach(s => { ctx.fillStyle = s.color || '#7f8c8d'; ctx.fillRect(s.x, s.y, s.width, s.height); });
+      interiorFloors.forEach(f => { ctx.fillStyle = '#95a5a6'; ctx.fillRect(f.x, f.y, f.width, f.height); });
       
       ladders.forEach(l => {
         ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 3; ctx.beginPath();
@@ -656,6 +674,13 @@
           ctx.moveTo(l.x + 5, y); ctx.lineTo(l.x + l.width - 5, y); 
         } 
         ctx.stroke();
+      });
+
+      doors.forEach(d => {
+        ctx.fillStyle = '#641e16'; ctx.fillRect(d.x - 2, d.y - 2, d.width + 4, d.height + 2);
+        if (!d.open) {
+          ctx.fillStyle = '#f1c40f'; ctx.fillRect(d.x, d.y, d.width, d.height);
+        }
       });
 
       airDrops.forEach(ad => {
